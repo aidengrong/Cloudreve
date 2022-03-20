@@ -144,16 +144,12 @@ func (fs *FileSystem) DispatchHandler() error {
 
 		fs.Handler = handler
 	case "qiniu":
-		fs.Handler = qiniu.Driver{
-			Policy: currentPolicy,
-		}
+		fs.Handler = qiniu.NewDriver(currentPolicy)
 		return nil
 	case "oss":
-		fs.Handler = oss.Driver{
-			Policy:     currentPolicy,
-			HTTPClient: request.NewClient(),
-		}
-		return nil
+		handler, err := oss.NewDriver(currentPolicy)
+		fs.Handler = handler
+		return err
 	case "upyun":
 		fs.Handler = upyun.Driver{
 			Policy: currentPolicy,
@@ -178,10 +174,9 @@ func (fs *FileSystem) DispatchHandler() error {
 		}
 		return nil
 	case "s3":
-		fs.Handler = s3.Driver{
-			Policy: currentPolicy,
-		}
-		return nil
+		handler, err := s3.NewDriver(currentPolicy)
+		fs.Handler = handler
+		return err
 	default:
 		return ErrUnknownPolicyType
 	}
@@ -207,7 +202,7 @@ func NewFileSystemFromCallback(c *gin.Context) (*FileSystem, error) {
 	}
 
 	// 获取回调会话
-	callbackSessionRaw, ok := c.Get("callbackSession")
+	callbackSessionRaw, ok := c.Get(UploadSessionCtx)
 	if !ok {
 		return nil, errors.New("找不到回调会话")
 	}

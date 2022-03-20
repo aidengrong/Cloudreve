@@ -1,6 +1,7 @@
 package fsctx
 
 import (
+	"errors"
 	"io"
 	"time"
 )
@@ -26,15 +27,18 @@ type UploadTaskInfo struct {
 	UploadSessionID *string
 	AppendStart     uint64
 	Model           interface{}
+	Src             string
 }
 
 // FileHeader 上传来的文件数据处理器
 type FileHeader interface {
 	io.Reader
 	io.Closer
+	io.Seeker
 	Info() *UploadTaskInfo
 	SetSize(uint64)
 	SetModel(fileModel interface{})
+	Seekable() bool
 }
 
 // FileStream 用户传来的文件
@@ -43,6 +47,7 @@ type FileStream struct {
 	LastModified    *time.Time
 	Metadata        map[string]string
 	File            io.ReadCloser
+	Seeker          io.Seeker
 	Size            uint64
 	VirtualPath     string
 	Name            string
@@ -51,14 +56,35 @@ type FileStream struct {
 	UploadSessionID *string
 	AppendStart     uint64
 	Model           interface{}
+	Src             string
 }
 
 func (file *FileStream) Read(p []byte) (n int, err error) {
-	return file.File.Read(p)
+	if file.File != nil {
+		return file.File.Read(p)
+	}
+
+	return 0, io.EOF
 }
 
 func (file *FileStream) Close() error {
-	return file.File.Close()
+	if file.File != nil {
+		return file.File.Close()
+	}
+
+	return nil
+}
+
+func (file *FileStream) Seek(offset int64, whence int) (int64, error) {
+	if file.Seekable() {
+		return file.Seeker.Seek(offset, whence)
+	}
+
+	return 0, errors.New("no seeker")
+}
+
+func (file *FileStream) Seekable() bool {
+	return file.Seeker != nil
 }
 
 func (file *FileStream) Info() *UploadTaskInfo {
@@ -74,6 +100,7 @@ func (file *FileStream) Info() *UploadTaskInfo {
 		UploadSessionID: file.UploadSessionID,
 		AppendStart:     file.AppendStart,
 		Model:           file.Model,
+		Src:             file.Src,
 	}
 }
 

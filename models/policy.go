@@ -3,8 +3,6 @@ package model
 import (
 	"encoding/gob"
 	"encoding/json"
-	"fmt"
-	"net/url"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -60,6 +58,8 @@ type PolicyOption struct {
 	ServerSideEndpoint string `json:"server_side_endpoint,omitempty"`
 	// 分片上传的分片大小
 	ChunkSize uint64 `json:"chunk_size,omitempty"`
+	// 分片上传时是否需要预留空间
+	PlaceholderWithSize bool `json:"placeholder_with_size,omitempty"`
 }
 
 var thumbSuffix = map[string][]string{
@@ -150,7 +150,7 @@ func (policy *Policy) GeneratePath(uid uint, origin string) string {
 func (policy *Policy) GenerateFileName(uid uint, origin string) string {
 	// 未开启自动重命名时，直接返回原始文件名
 	if !policy.AutoRename {
-		return policy.getOriginNameRule(origin)
+		return origin
 	}
 
 	fileRule := policy.FileNameRule
@@ -169,9 +169,8 @@ func (policy *Policy) GenerateFileName(uid uint, origin string) string {
 		"{hour}":           time.Now().Format("15"),
 		"{minute}":         time.Now().Format("04"),
 		"{second}":         time.Now().Format("05"),
+		"{originname}":     origin,
 	}
-
-	replaceTable["{originname}"] = policy.getOriginNameRule(origin)
 
 	fileRule = util.Replace(replaceTable, fileRule)
 	return fileRule
@@ -226,45 +225,20 @@ func (policy *Policy) IsThumbGenerateNeeded() bool {
 
 // IsUploadPlaceholderWithSize 返回此策略创建上传会话时是否需要预留空间
 func (policy *Policy) IsUploadPlaceholderWithSize() bool {
-	return policy.Type == "remote"
+	if policy.Type == "remote" {
+		return true
+	}
+
+	if util.ContainsString([]string{"onedrive", "oss", "qiniu", "cos", "s3"}, policy.Type) {
+		return policy.OptionsSerialized.PlaceholderWithSize
+	}
+
+	return false
 }
 
 // CanStructureBeListed 返回存储策略是否能被前台列物理目录
 func (policy *Policy) CanStructureBeListed() bool {
 	return policy.Type != "local" && policy.Type != "remote"
-}
-
-// GetUploadURL 获取文件上传服务API地址
-func (policy *Policy) GetUploadURL() string {
-	server, err := url.Parse(policy.Server)
-	if err != nil {
-		return policy.Server
-	}
-
-	controller, _ := url.Parse("")
-	switch policy.Type {
-	case "local", "onedrive":
-		return "/api/v3/file/upload"
-	case "remote":
-		controller, _ = url.Parse("/api/v3/slave/upload")
-	case "oss":
-		return "https://" + policy.BucketName + "." + policy.Server
-	case "cos":
-		return policy.Server
-	case "upyun":
-		return "https://v0.api.upyun.com/" + policy.BucketName
-	case "s3":
-		if policy.Server == "" {
-			return fmt.Sprintf("https://%s.s3.%s.amazonaws.com/", policy.BucketName,
-				policy.OptionsSerialized.Region)
-		}
-
-		if !strings.Contains(policy.Server, policy.BucketName) {
-			controller, _ = url.Parse("/" + policy.BucketName)
-		}
-	}
-
-	return server.ResolveReference(controller).String()
 }
 
 // SaveAndClearCache 更新并清理缓存

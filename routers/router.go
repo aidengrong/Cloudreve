@@ -46,9 +46,15 @@ func InitSlaveRouter() *gin.Engine {
 		// 接收主机心跳包
 		v3.POST("heartbeat", controllers.SlaveHeartbeat)
 		// 上传
-		v3.POST("upload/:sessionId", controllers.SlaveUpload)
-		// 创建上传会话上传
-		v3.PUT("upload", controllers.SlaveGetUploadSession)
+		upload := v3.Group("upload")
+		{
+			// 上传分片
+			upload.POST(":sessionId", controllers.SlaveUpload)
+			// 创建上传会话上传
+			upload.PUT("", controllers.SlaveGetUploadSession)
+			// 删除上传会话
+			upload.DELETE(":sessionId", controllers.SlaveDeleteUploadSession)
+		}
 		// 下载
 		v3.GET("download/:speed/:path/:name", controllers.SlaveDownload)
 		// 预览 / 外链
@@ -213,7 +219,15 @@ func InitMasterRouter() *gin.Engine {
 			// 事件通知
 			slave.PUT("notification/:subject", controllers.SlaveNotificationPush)
 			// 上传
-			slave.POST("upload", controllers.SlaveUpload)
+			upload := slave.Group("upload")
+			{
+				// 上传分片
+				upload.POST(":sessionId", controllers.SlaveUpload)
+				// 创建上传会话上传
+				upload.PUT("", controllers.SlaveGetUploadSession)
+				// 删除上传会话
+				upload.DELETE(":sessionId", controllers.SlaveDeleteUploadSession)
+			}
 			// OneDrive 存储策略凭证
 			slave.GET("credential/onedrive/:id", controllers.SlaveGetOneDriveCredential)
 		}
@@ -223,25 +237,29 @@ func InitMasterRouter() *gin.Engine {
 		{
 			// 远程策略上传回调
 			callback.POST(
-				"remote/:key",
+				"remote/:sessionID/:key",
+				middleware.UseUploadSession("remote"),
 				middleware.RemoteCallbackAuth(),
 				controllers.RemoteCallback,
 			)
 			// 七牛策略上传回调
 			callback.POST(
-				"qiniu/:key",
+				"qiniu/:sessionID",
+				middleware.UseUploadSession("qiniu"),
 				middleware.QiniuCallbackAuth(),
 				controllers.QiniuCallback,
 			)
 			// 阿里云OSS策略上传回调
 			callback.POST(
-				"oss/:key",
+				"oss/:sessionID",
+				middleware.UseUploadSession("oss"),
 				middleware.OSSCallbackAuth(),
 				controllers.OSSCallback,
 			)
 			// 又拍云策略上传回调
 			callback.POST(
-				"upyun/:key",
+				"upyun/:sessionID",
+				middleware.UseUploadSession("upyun"),
 				middleware.UpyunCallbackAuth(),
 				controllers.UpyunCallback,
 			)
@@ -249,11 +267,12 @@ func InitMasterRouter() *gin.Engine {
 			{
 				// 文件上传完成
 				onedrive.POST(
-					"finish/:key",
+					"finish/:sessionID",
+					middleware.UseUploadSession("onedrive"),
 					middleware.OneDriveCallbackAuth(),
 					controllers.OneDriveCallback,
 				)
-				// 文件上传完成
+				// OAuth 完成
 				onedrive.GET(
 					"auth",
 					controllers.OneDriveOAuth,
@@ -261,14 +280,14 @@ func InitMasterRouter() *gin.Engine {
 			}
 			// 腾讯云COS策略上传回调
 			callback.GET(
-				"cos/:key",
-				middleware.COSCallbackAuth(),
+				"cos/:sessionID",
+				middleware.UseUploadSession("cos"),
 				controllers.COSCallback,
 			)
 			// AWS S3策略上传回调
 			callback.GET(
-				"s3/:key",
-				middleware.S3CallbackAuth(),
+				"s3/:sessionID",
+				middleware.UseUploadSession("s3"),
 				controllers.S3Callback,
 			)
 		}
